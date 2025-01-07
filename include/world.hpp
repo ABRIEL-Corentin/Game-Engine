@@ -1,85 +1,80 @@
 ////////////////////////
 //
-//  Created: Wed May 01 2024
+//  Created: Fri Jan 03 2025
 //  File: world.hpp
 //
 ////////////////////////
 
 #pragma once
 
-#include "mce/types.hpp"
-#include "mce/dependency.hpp"
-#include "mce/components.hpp"
-#include "mce/requests.hpp"
+#include "entity.hpp"
+#include "component.hpp"
+#include "types.hpp"
+#include "request.hpp"
+#include "dependency.hpp"
+
+#include <unordered_map>
+#include <typeindex>
+#include <any>
 
 namespace mce
 {
-    template<typename ... COMPONENTS>
-    struct Require;
-
     class World
     {
         template<typename ... COMPONENTS>
-        friend struct Require;
+        friend class Require;
 
         public:
             World();
 
             Entity createEntity();
             void requestDestroyEntity(const Entity &entity);
-
             void applyRequests();
-            bool launchCustomMethod(std::size_t id);
 
-            template<typename ... ARGS>
-            bool launchCustomMethod(std::size_t id, ARGS &&... args);
+            template<typename T>
+            Components<T> getComponents();
 
             template<typename T, typename ... ARGS>
-            T *addComponent(const Entity &entity, ARGS &&... args);
+            Component<T> addComponent(const Entity &entity, ARGS &&... args);
+
+            template<typename T>
+            Component<T> getComponent(const Entity &entity);
 
             template<typename T>
             bool hasComponent(const Entity &entity);
 
             template<typename T>
-            void requestRemoveComponent(const Entity &entity, bool force = false);
+            void requestRemoveComponent(const Entity &entity, bool &&force = false);
+
+            template<typename T, auto M, typename ... ARGS>
+            void registerCustomMethod(std::size_t id);
+
+            template<typename T, auto M, typename ... ARGS>
+            void unregisterCustomMethod(std::size_t id);
+
+            template<typename ... ARGS>
+            void executeCustomMethod(std::size_t id, ARGS &&... args);
+
+        private:
+            entity::Manager _entity_manager;
+            std::unordered_map<std::type_index, std::any> _component_managers;
+            Requests<RemoveComponentRequest> _remove_component_requests;
+            Requests<DestroyEntityRequest> _destroy_entity_requests;
+            std::unordered_map<std::size_t, std::any> _custom_methods;
+
+            void destroyEntity(const Entity &entity);
 
             template<typename T>
-            inline T *getComponent(const Entity &entity);
-
-            template<typename T>
-            Components<T> &getComponents();
+            void removeComponent(const Entity &entity, bool &&force);
 
             template<typename T>
             void registerComponent();
 
             template<typename T>
-            void requestUnregisterComponent();
+            void unregisterComponent();
 
-            template<typename T, auto M>
-            void registerCustomMethod(std::size_t id);
-
-            template<typename T, auto M>
-            void unregisterCustomMethod(std::size_t id);
-
-            template<typename T, auto M, typename ... ARGS>
-            std::enable_if_t<(sizeof...(ARGS) > 0), void> registerCustomMethod(std::size_t id);
-
-            template<typename T, auto M, typename ... ARGS>
-            std::enable_if_t<(sizeof...(ARGS) > 0), void> unregisterCustomMethod(std::size_t id);
-
-        private:
-            Entity _current_entity;
-            Entities _available_entities;
-            ComponentContainer _components;
-            ComponentsDependency _components_dependency;
-            Requests<RequestRemoveComponent> _remove_component_requests;
-            Requests<RequestDestroyEntity> _destroy_entity_requests;
-            Requests<RequestUnregisterComponent> _unregister_component_requests;
-            Methods<World, void, const Entity &, bool> _remove_component_methods;
-            std::unordered_map<std::size_t, std::any> _custom_methods_with_args;
-            std::unordered_map<std::size_t, Methods<World, void>> _custom_methods_without_args;
-
-            void destroyEntity(const Entity &entity);
+            template<typename T>
+            component::Manager<T> &getComponentManager();
 
             template<typename T, auto M, typename ... ARGS>
             void executeMethod(ARGS &&... args);
@@ -89,12 +84,6 @@ namespace mce
 
             template<typename T, typename REQUIRED>
             void removeDependency();
-
-            template<typename T>
-            void unregisterComponent();
-
-            template<typename T>
-            void removeComponent(const Entity &entity, bool &&force);
     };
 }
 

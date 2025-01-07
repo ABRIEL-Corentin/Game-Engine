@@ -11,6 +11,9 @@ set(
     SRC_FILES
 
     ${SRC_PATH}/world.cpp
+    ${SRC_PATH}/entity.cpp
+    ${SRC_PATH}/component.cpp
+    ${SRC_PATH}/dependency.cpp
 )
 
 set(CMAKE_CXX_STANDARD 20)

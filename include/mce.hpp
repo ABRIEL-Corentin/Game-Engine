@@ -1,13 +1,12 @@
 ////////////////////////
 //
-//  Created: Sun Jul 28 2024
+//  Created: Fri Jan 03 2025
 //  File: mce.hpp
 //
 ////////////////////////
 
 #pragma once
 
-#include "mce/types.hpp"
-#include "mce/components.hpp"
-#include "mce/require.hpp"
-#include "mce/world.hpp"
+#include "entity.hpp"
+#include "world.hpp"
+#include "require.hpp"

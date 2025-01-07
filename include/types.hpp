@@ -1,27 +1,35 @@
 ////////////////////////
 //
-//  Created: Wed May 01 2024
+//  Created: Fri Jan 03 2025
 //  File: types.hpp
 //
 ////////////////////////
 
 #pragma once
 
-#include <memory>
 #include <vector>
-#include <any>
-#include <optional>
-#include <unordered_map>
-#include <map>
-#include <typeindex>
+
+#define FORMAT_CUSTOM_METHOD_CONCEPT_NAME(NAME) Has##NAME##CustomMethod
+
+#define DECLARE_CUSTOM_METHOD(NAME, ...) \
+    template<typename T> \
+    concept FORMAT_CUSTOM_METHOD_CONCEPT_NAME(NAME) = mce::HasMethod<T, &T::NAME, void, ##__VA_ARGS__>; \
+
+#define REGISTER_CUSTOM_METHOD(ID, NAME, ...) \
+    if constexpr(FORMAT_CUSTOM_METHOD_CONCEPT_NAME(NAME)<T>) \
+        world.registerCustomMethod<T, &T::NAME, ##__VA_ARGS__>(ID); \
+
+#define UNREGISTER_CUSTOM_METHOD(ID, NAME, ...) \
+    if constexpr(FORMAT_CUSTOM_METHOD_CONCEPT_NAME(NAME)<T>) \
+        world.unregisterCustomMethod<T, &T::NAME, ##__VA_ARGS__>(ID); \
 
 namespace mce
 {
-    class World;
+    template<typename R, typename ... ARGS>
+    using Function = R (*)(ARGS &&...);
 
-    using Entity = std::size_t;
-    using Entities = std::vector<Entity>;
-    using ComponentContainer = std::unordered_map<std::type_index, std::any>;
+    template<typename R, typename ... ARGS>
+    using Functions = std::vector<Function<R, ARGS...>>;
 
     template<typename T, typename R, typename ... ARGS>
     using Method = R (T::*)(ARGS &&...);
@@ -40,19 +48,4 @@ namespace mce
     {
         { M(std::forward<ARGS>(args)...) } -> std::same_as<R>;
     };
-
-    template<typename T, auto M, typename ... ARGS>
-    concept HasCustomMethod = HasMethod<T, M, void, ARGS...>;
-
-    template<typename T>
-    concept HasApplyRequiredComponents = HasCustomMethod<T, &T::applyRequiredComponents, World &, const Entity &>;
-
-    template<typename T>
-    concept HasInitDependency = HasStaticMethod<&T::template initDependency<T>, void, World &>;
-
-    template<typename T>
-    concept HasRemoveDependency = HasStaticMethod<&T::template removeDependency<T>, void, World &>;
-
-    template<typename T>
-    concept HasInit = HasCustomMethod<T, &T::init, World &, const Entity &>;
 }

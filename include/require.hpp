@@ -1,27 +1,30 @@
 ////////////////////////
 //
-//  Created: Sun Jul 28 2024
+//  Created: Sat Jan 04 2025
 //  File: require.hpp
 //
 ////////////////////////
 
 #pragma once
 
-#include "mce/world.hpp"
+#include "world.hpp"
 
 namespace mce
 {
     template<typename ... COMPONENTS>
-    struct Require
+    class Require
     {
-        inline void applyRequiredComponents(World &world, const Entity &entity);
+        friend class World;
 
-        template<typename T>
-        inline static void initDependency(World &world);
+        private:
+            inline void applyRequiredComponents(World &world, const Entity &entity);
 
-        template<typename T>
-        inline static void removeDependency(World &world);
+            template<typename T>
+            inline static void initDependency(World &world);
+
+            template<typename T>
+            inline static void removeDependency(World &world);
     };
 }
 
-#include "mce/inl/require.inl"
+#include "inl/require.inl"

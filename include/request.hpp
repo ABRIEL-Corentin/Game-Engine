@@ -1,13 +1,14 @@
 ////////////////////////
 //
-//  Created: Sun Jul 28 2024
-//  File: requests.hpp
+//  Created: Sat Jan 04 2025
+//  File: request.hpp
 //
 ////////////////////////
 
 #pragma once
 
-#include "mce/types.hpp"
+#include "types.hpp"
+#include "entity.hpp"
 
 namespace mce
 {
@@ -17,20 +18,15 @@ namespace mce
         Method<T, R, ARGS...> request;
     };
 
-    struct RequestRemoveComponent : public Request<World, void, const Entity &, bool>
+    struct RemoveComponentRequest : public Request<World, void, const Entity &, bool &&>
     {
         Entity entity;
         bool force;
     };
 
-    struct RequestDestroyEntity : public Request<World, void, const Entity &>
+    struct DestroyEntityRequest : public Request<World, void, const Entity &>
     {
         Entity entity;
-    };
-
-    struct RequestUnregisterComponent : public Request<World, void>
-    {
-
     };
 
     template<typename T>

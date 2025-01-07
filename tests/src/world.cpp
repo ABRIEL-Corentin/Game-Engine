@@ -151,16 +151,16 @@ namespace testing
         CHECK(world.getComponent<TestComponentUpdate>(entity)->a == 0);
         CHECK(world.getComponent<TestComponentUpdate>(entity)->ptr == nullptr);
 
-        world.launchCustomMethod(UPDATE_METHOD_ID);
+        world.executeCustomMethod(UPDATE_METHOD_ID);
 
         CHECK(world.getComponent<TestComponentUpdate>(entity)->update_called);
 
-        world.launchCustomMethod(UPDATE_WITH_PARAM_METHOD_ID, 42);
+        world.executeCustomMethod(UPDATE_WITH_PARAM_METHOD_ID, 42);
 
         CHECK(world.getComponent<TestComponentUpdate>(entity)->a == 42);
 
         int value = 42;
-        world.launchCustomMethod(REFERENCE_CUSTOM_METHOD_ID, value);
+        world.executeCustomMethod(REFERENCE_CUSTOM_METHOD_ID, value);
 
         CHECK(world.getComponent<TestComponentUpdate>(entity)->ptr == &value);
         CHECK(value == 12);

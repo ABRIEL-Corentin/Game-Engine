@@ -1,286 +1,208 @@
 ////////////////////////
 //
-//  Created: Wed May 01 2024
+//  Created: Fri Jan 03 2025
 //  File: world.inl
 //
 ////////////////////////
 
+#include "world.hpp"
+
+#include <iostream>
 #include <algorithm>
-#include <thread>
-#include "mce/world.hpp"
 
 namespace mce
 {
-    template<typename ... ARGS>
-    bool World::launchCustomMethod(std::size_t id, ARGS &&... args)
+    template<typename T>
+    Components<T> World::getComponents()
     {
-        auto methods = _custom_methods_with_args.find(id);
+        component::Manager<T> &manager = getComponentManager<T>();
 
-        if (methods == _custom_methods_with_args.end())
-            return false;
-
-        for (auto &method: std::any_cast<Methods<World, void, ARGS...> &>(methods->second))
-            (this->*method)(std::forward<ARGS>(args)...);
-
-        return true;
+        return manager.getComponents();
     }
 
     template<typename T, typename ... ARGS>
-    T *World::addComponent(const Entity &entity, ARGS &&... args)
+    Component<T> World::addComponent(const Entity &entity, ARGS &&... args)
     {
-        Components<T> &components = getComponents<T>();
+        component::Manager<T> &manager = getComponentManager<T>();
+
+        if (manager.containEntity(entity))
+            return manager.get(entity);
+
+        manager.insertEntity(entity, args...);
 
         if constexpr(HasApplyRequiredComponents<T>)
-            components.get(entity)->applyRequiredComponents(*this, entity);
+            manager.get(entity)->applyRequiredComponents(*this, entity);
 
-        if (components.contain(entity))
-            return components.get(entity);
+        return manager.get(entity);
+    }
 
-        components.insertEntity(entity, std::forward<ARGS>(args)...);
+    template<typename T>
+    Component<T> World::getComponent(const Entity &entity)
+    {
+        component::Manager<T> &manager = getComponentManager<T>();
 
-        if constexpr(HasInit<T>)
-            components.get(entity)->init(*this, entity);
+        if (!manager.containEntity(entity))
+            return NULL_COMPONENT;
 
-        return components.get(entity);
+        return manager.get(entity);
     }
 
     template<typename T>
     bool World::hasComponent(const Entity &entity)
     {
-        return getComponent<T>(entity) != nullptr;
+        return getComponent<T>(entity) != NULL_COMPONENT;
     }
 
     template<typename T>
-    void World::requestRemoveComponent(const Entity &entity, bool force)
+    void World::requestRemoveComponent(const Entity &entity, bool &&force)
     {
-        RequestRemoveComponent request = RequestRemoveComponent();
+        RemoveComponentRequest request = RemoveComponentRequest();
+
         request.request = &World::removeComponent<T>;
         request.entity = entity;
         request.force = force;
-
         _remove_component_requests.push_back(request);
     }
 
-    template<typename T>
-    inline T *World::getComponent(const Entity &entity)
-    {
-        return getComponents<T>().get(entity);
-    }
-
-    template<typename T>
-    Components<T> &World::getComponents()
-    {
-        auto components = _components.find(std::type_index(typeid(T)));
-
-        if (components == _components.end()) {
-            registerComponent<T>();
-            return getComponents<T>();
-        }
-
-        return std::any_cast<Components<T> &>(components->second);
-    }
-
-    template<typename T>
-    void World::registerComponent()
-    {
-        auto components = _components.find(std::type_index(typeid(T)));
-
-        if (components != _components.end())
-            return;
-
-        if constexpr(HasInitDependency<T>)
-            T::template initDependency<T>(*this);
-
-        _components.insert({std::type_index(typeid(T)), Components<T>()});
-        _remove_component_methods.push_back(&World::removeComponent<T>);
-
-        registerCustomMethods<T>(*this);
-    }
-
-    template<typename T>
-    void World::requestUnregisterComponent()
-    {
-        RequestUnregisterComponent request = RequestUnregisterComponent();
-        request.request = &World::unregisterComponent<T>;
-
-        _unregister_component_requests.push_back(request);
-    }
-
-    template<typename T, auto M>
+    template<typename T, auto M, typename ... ARGS>
     void World::registerCustomMethod(std::size_t id)
     {
-        auto methods = _custom_methods_without_args.find(id);
+        auto custom_methods = _custom_methods.find(id);
 
-        if (methods == _custom_methods_without_args.end()) {
-            _custom_methods_without_args.insert({id, Methods<World, void>()});
-            methods = _custom_methods_without_args.find(id);
+        if (custom_methods == _custom_methods.end()) {
+            _custom_methods.insert({id, Methods<World, void, ARGS...>()});
+            custom_methods = _custom_methods.find(id);
         }
 
-        methods->second.push_back(&World::executeMethod<T, M>);
+        std::any_cast<Methods<World, void, ARGS...> &>(custom_methods->second).push_back(&World::executeMethod<T, M, ARGS...>);
     }
 
-    template<typename T, auto M>
+    template<typename T, auto M, typename ... ARGS>
     void World::unregisterCustomMethod(std::size_t id)
     {
-        auto methods = _custom_methods_without_args.find(id);
+        auto custom_methods = _custom_methods.find(id);
 
-        if (methods == _custom_methods_without_args.end())
+        if (custom_methods == _custom_methods.end())
             return;
 
-        methods->second.erase(
-            std::remove_if(methods->second.begin(), methods->second.end(),
-                [&](Method<World, void> method) {
-                    return method == &World::executeMethod<T, M>;
-                }
-            ),
-            methods->second.end()
-        );
-
-        if (!methods->second.size())
-            _custom_methods_without_args.erase(methods);
-    }
-
-    template<typename T, auto M, typename ... ARGS>
-    std::enable_if_t<(sizeof...(ARGS) > 0), void> World::registerCustomMethod(std::size_t id)
-    {
-        auto methods = _custom_methods_with_args.find(id);
-
-        if (methods == _custom_methods_with_args.end()) {
-            _custom_methods_with_args.insert({id, Methods<World, void, ARGS...>()});
-            methods = _custom_methods_with_args.find(id);
-        }
-
-        std::any_cast<Methods<World, void, ARGS...> &>(methods->second).push_back(&World::executeMethod<T, M, ARGS...>);
-    }
-
-    template<typename T, auto M, typename ... ARGS>
-    std::enable_if_t<(sizeof...(ARGS) > 0), void> World::unregisterCustomMethod(std::size_t id)
-    {
-        auto methods = _custom_methods_with_args.find(id);
-
-        if (methods == _custom_methods_with_args.end())
-            return;
-
-        Methods<World, void, ARGS...> &container = std::any_cast<Methods<World, void, ARGS...> &>(methods->second);
+        Methods<World, void, ARGS...> &container = std::any_cast<Methods<World, void, ARGS...> &>(custom_methods->second);
 
         container.erase(
             std::remove_if(container.begin(), container.end(),
-                [&](Method<World, void, ARGS...> method) {
-                    return method == &World::executeMethod<T, M, ARGS...>;
+                [&](Method<World, void, ARGS...> custom_method) {
+                    return custom_method == &World::executeMethod<T, M, ARGS...>;
                 }
             ),
             container.end()
         );
 
         if (!container.size())
-            _custom_methods_with_args.erase(methods);
+            _custom_methods.erase(custom_methods);
     }
 
-    template<typename T, auto M, typename ... ARGS>
-    void World::executeMethod(ARGS &&... args)
+    template<typename ... ARGS>
+    void World::executeCustomMethod(std::size_t id, ARGS &&... args)
     {
-        Components<T> &components = getComponents<T>();
+        auto custom_methods = _custom_methods.find(id);
 
-        for (T &component: components)
-            (component.*M)(std::forward<ARGS>(args)...);
-    }
-
-    template<typename T, typename REQUIRED>
-    void World::initDependency()
-    {
-        auto components_dependency = _components_dependency.find(std::type_index(typeid(REQUIRED)));
-
-        if (components_dependency == _components_dependency.end()) {
-            _components_dependency.insert({std::type_index(typeid(REQUIRED)), ComponentDependency()});
-            components_dependency = _components_dependency.find(std::type_index(typeid(REQUIRED)));
-        }
-
-        components_dependency->second.contain_main_components.push_back(&World::hasComponent<T>);
-        components_dependency->second.remove_main_components.push_back(&World::removeComponent<T>);
-    }
-
-    template<typename T, typename REQUIRED>
-    void World::removeDependency()
-    {
-        auto components_dependency = _components_dependency.find(std::type_index(typeid(REQUIRED)));
-
-        if (components_dependency == _components_dependency.end())
+        if (custom_methods == _custom_methods.end())
             return;
 
-        ComponentDependency &dependency = components_dependency->second;
-
-        dependency.contain_main_components.erase(
-            std::remove_if(dependency.contain_main_components.begin(), dependency.contain_main_components.end(),
-                [&](Method<World, bool, const Entity &> method) {
-                    return method == &World::hasComponent<T>;
-                }
-            ),
-            dependency.contain_main_components.end()
-        );
-
-        dependency.remove_main_components.erase(
-            std::remove_if(dependency.remove_main_components.begin(), dependency.remove_main_components.end(),
-                [&](Method<World, void, const Entity &, bool &&> method) {
-                    return method == &World::removeComponent<T>;
-                }
-            ),
-            dependency.remove_main_components.end()
-        );
-
-        if (!dependency.contain_main_components.size() && !dependency.remove_main_components.size())
-            _components_dependency.erase(components_dependency);
-    }
-
-    template<typename T>
-    void World::unregisterComponent()
-    {
-        auto components = _components.find(std::type_index(typeid(T)));
-
-        if (components == _components.end())
-            return;
-
-        if constexpr(HasRemoveDependency<T>)
-            T::template removeDependency<T>(*this);
-
-        _components.erase(std::type_index(typeid(T)));
-        _remove_component_methods.erase(
-            std::remove_if(_remove_component_methods.begin(), _remove_component_methods.end(),
-                [&](Method<World, void, const Entity &, bool &&> method) {
-                    return method == &World::removeComponent<T>;
-                }),
-            _remove_component_methods.end()
-        );
-
-        unregisterCustomMethods<T>(*this);
+        for (auto &custom_method: std::any_cast<Methods<World, void, ARGS...> &>(custom_methods->second))
+            (this->*custom_method)(std::forward<ARGS>(args)...);
     }
 
     template<typename T>
     void World::removeComponent(const Entity &entity, bool &&force)
     {
-        Components<T> &components = getComponents<T>();
+        component::Manager<T> &manager = getComponentManager<T>();
 
-        if (!components.contain(entity)) {
-            if (!components.size())
-                requestUnregisterComponent<T>();
+        if (!manager.containEntity(entity)) {
+            if (!manager.getComponents().size())
+                unregisterComponent<T>();
 
             return;
         }
 
-        auto components_dependency = _components_dependency.find(std::type_index(typeid(T)));
+        ComponentsDependency &components_dependency = manager.getComponentsDependency();
 
-        if (components_dependency != _components_dependency.end()) {
-            if (force)
-                for (auto &remove_main_component: components_dependency->second.remove_main_components)
-                    (this->*remove_main_component)(entity, true);
-            else
-                for (auto &contain_main_component: components_dependency->second.contain_main_components)
-                    if ((this->*contain_main_component)(entity))
-                        return;
+        if (force)
+            for (auto &remove_main_component: components_dependency.re)
+
+        if (!manager.removeEntity(entity))
+            return;
+
+        if (!manager.getComponents().size())
+            unregisterComponent<T>();
+    }
+
+    template<typename T>
+    void World::registerComponent()
+    {
+        auto it = _component_managers.find(std::type_index(typeid(T)));
+
+        if (it != _component_managers.end())
+            return;
+
+        _component_managers.insert({std::type_index(typeid(T)), component::Manager<T>()});
+        _entity_manager.addRemoveComponentMethod(&World::requestRemoveComponent<T>);
+        registerCustomMethods<T>(*this);
+
+        if constexpr(HasInitDependency<T>)
+            T::template initDependency<T>(*this);
+    }
+
+    template<typename T>
+    void World::unregisterComponent()
+    {
+        auto it = _component_managers.find(std::type_index(typeid(T)));
+
+        if (it == _component_managers.end())
+            return;
+
+        _component_managers.erase(std::type_index(typeid(T)));
+        _entity_manager.removeRemoveComponentMethod(&World::requestRemoveComponent<T>);
+        unregisterCustomMethods<T>(*this);
+
+        if constexpr(HasRemoveDependency<T>)
+            T::template removeDependency<T>(*this);
+    }
+
+    template<typename T>
+    component::Manager<T> &World::getComponentManager()
+    {
+        auto it = _component_managers.find(std::type_index(typeid(T)));
+
+        if (it == _component_managers.end()) {
+            registerComponent<T>();
+            return getComponentManager<T>();
         }
 
-        components.remove(entity);
+        return std::any_cast<component::Manager<T> &>(it->second);
+    }
 
-        if (!components.size())
-            requestUnregisterComponent<T>();
+    template<typename T, auto M, typename ... ARGS>
+    void World::executeMethod(ARGS &&... args)
+    {
+        component::Manager<T> &manager = getComponentManager<T>();
+
+        for (Component<T> &component: manager.getComponents())
+            (component->*M)(std::forward<ARGS>(args)...);
+    }
+
+    template<typename T, typename REQUIRED>
+    void World::initDependency()
+    {
+        component::Manager<T> &manager = getComponentManager<T>();
+
+        manager.template initDependency<REQUIRED>(&World::hasComponent<T>, &World::removeComponent<T>);
+    }
+
+    template<typename T, typename REQUIRED>
+    void World::removeDependency()
+    {
+        component::Manager<T> &manager = getComponentManager<T>();
+
+        manager.template removeDependency<REQUIRED>(&World::hasComponent<T>, &World::removeComponent<T>);
     }
 }
